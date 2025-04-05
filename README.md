@@ -1,4 +1,3 @@
-# pcap-programming
 #include <pcap.h>
 #include <stdio.h>
 #include <netinet/ip.h>
@@ -7,26 +6,38 @@
 #include <arpa/inet.h>
 
 void packet_handler(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char *packet) {
-    // 패킷 길이 검증 
-    if (pkthdr->len < sizeof(struct ether_header) + sizeof(struct ip) + sizeof(struct tcphdr)) 
-    {
-        printf("잘못된 패킷 길이\n");
+    int ethernet_len = sizeof(struct ether_header);
+
+    // 최소한 Ethernet + IP 헤더 크기만큼 있어야 함
+    if (pkthdr->len < ethernet_len + sizeof(struct ip)) {
+        printf("패킷 너무 짧음 (IP 헤더까지 도달 불가)\n");
         return;
     }
 
     struct ether_header *eth = (struct ether_header *)packet;
-    struct ip *ip_hdr = (struct ip *)(packet + sizeof(struct ether_header));
-    struct tcphdr *tcp_hdr = (struct tcphdr *)(packet + sizeof(struct ether_header) + (ip_hdr->ip_hl * 4));
+    struct ip *ip_hdr = (struct ip *)(packet + ethernet_len);
 
-    // TCP 패킷만 처리
+    // TCP만 처리
     if (ip_hdr->ip_p != IPPROTO_TCP) return;
 
-    // 메시지 데이터 추출
+    int ip_header_len = ip_hdr->ip_hl * 4;
+    if (pkthdr->len < ethernet_len + ip_header_len + sizeof(struct tcphdr)) {
+        printf("패킷 너무 짧음 (TCP 헤더까지 도달 불가)\n");
+        return;
+    }
+
+    struct tcphdr *tcp_hdr = (struct tcphdr *)(packet + ethernet_len + ip_header_len);
+
     int tcp_header_len = tcp_hdr->th_off * 4;
-    int total_header_len = sizeof(struct ether_header) + (ip_hdr->ip_hl * 4) + tcp_header_len;
-    int payload_len = pkthdr->len - total_header_len;
+    int total_header_len = ethernet_len + ip_header_len + tcp_header_len;
+
+    if (pkthdr->len < total_header_len) {
+        printf("패킷 너무 짧음 (페이로드까지 도달 불가)\n");
+        return;
+    }
 
     const u_char *payload = packet + total_header_len;
+    int payload_len = pkthdr->len - total_header_len;
 
     // 4. 결과 출력
     printf("\n[패킷 크기: %d bytes]", pkthdr->len);
@@ -92,6 +103,6 @@ int main() {
     pcap_loop(handle, 0, packet_handler, NULL);
 
     pcap_close(handle);
-    
+
     return 0;
 }
